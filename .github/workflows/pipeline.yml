@@ -1,0 +1,102 @@
+name: Pipeline CI/CD
+
+on:
+  push:
+    branches: [develop, staging, main]
+  pull_request:
+    branches: [staging, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    name: Build & Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build imagen Docker
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: false
+          tags: webapp:${{ github.sha }}
+
+      - name: Detect secrets (Gitleaks)
+        uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  deploy-dev:
+    name: Deploy → dev
+    needs: build-and-test
+    if: github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-latest
+    environment:
+      name: dev
+      url: http://${{ vars.S3_BUCKET }}.s3-website-us-east-1.amazonaws.com
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Configurar credenciales AWS
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: us-east-1
+
+      - name: Deploy a S3 (dev)
+        run: aws s3 sync . "s3://${{ vars.S3_BUCKET }}" --delete --exclude "*" --include "index.html"
+
+  deploy-staging:
+    name: Deploy → staging
+    needs: build-and-test
+    if: github.ref == 'refs/heads/staging'
+    runs-on: ubuntu-latest
+    environment:
+      name: staging
+      url: http://${{ vars.S3_BUCKET }}.s3-website-us-east-1.amazonaws.com
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Configurar credenciales AWS
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: us-east-1
+
+      - name: Deploy a S3 (staging)
+        run: aws s3 sync . "s3://${{ vars.S3_BUCKET }}" --delete --exclude "*" --include "index.html"
+
+  deploy-production:
+    name: Deploy → production
+    needs: build-and-test
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: http://${{ vars.S3_BUCKET }}.s3-website-us-east-1.amazonaws.com
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Configurar credenciales AWS
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: us-east-1
+
+      - name: Deploy a S3 (production)
+        run: aws s3 sync . "s3://${{ vars.S3_BUCKET }}" --delete --exclude "*" --include "index.html"
